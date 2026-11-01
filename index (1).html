@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Telefono come mouse del PC</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#e8ecef;--fg:#10161c;--mut:#5b6672;--card:#fbfcfd;--line:#c7cfd6;
+  --acc:#0b8a86;--accfg:#fff;--hov:#c9efec;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#10161c;--fg:#e9eef2;--mut:#93a0ad;--card:#18212a;--line:#2b3744;
+    --acc:#3ccfc8;--accfg:#06201f;--hov:#17413f;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#10161c;--fg:#e9eef2;--mut:#93a0ad;--card:#18212a;--line:#2b3744;
+  --acc:#3ccfc8;--accfg:#06201f;--hov:#17413f;
+}
+html{height:100%}
+body{
+  height:100%;margin:0;background:var(--bg);color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:14px;box-sizing:border-box;overflow:hidden;user-select:none;-webkit-user-select:none;
+}
+section{height:100%;display:flex;flex-direction:column;gap:12px}
+[hidden]{display:none!important}
+h1{margin:0;font-size:1.3rem;letter-spacing:-.01em}
+p{margin:0;color:var(--mut);line-height:1.45}
+button{
+  font:inherit;font-weight:600;border-radius:12px;border:2px solid var(--line);
+  background:var(--card);color:var(--fg);padding:14px 18px;
+}
+button.main{background:var(--acc);border-color:var(--acc);color:var(--accfg);font-size:1.05rem}
+button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+input[type=text]{
+  font:inherit;font-size:1.6rem;letter-spacing:.3em;text-align:center;width:100%;box-sizing:border-box;
+  padding:12px;border-radius:12px;border:2px solid var(--line);background:var(--card);color:var(--fg);
+}
+#home{justify-content:center;max-width:380px;margin:0 auto}
+.codebox{display:flex;align-items:baseline;gap:12px}
+#code{font-size:2.4rem;font-weight:800;letter-spacing:.2em;color:var(--acc)}
+.grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);grid-auto-rows:1fr;gap:12px;min-height:0}
+.tile{
+  border:2px solid var(--line);border-radius:14px;background:var(--card);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  font-weight:600;transition:background .12s,border-color .12s;
+}
+.tile small{font-weight:400;font-size:.85rem;color:var(--mut)}
+.tile.hov{background:var(--hov);border-color:var(--acc)}
+.tile.on{background:var(--acc);border-color:var(--acc);color:var(--accfg)}
+.tile.on small{color:var(--accfg)}
+#pad{
+  flex:1;border:2px dashed var(--line);border-radius:16px;display:flex;align-items:center;
+  justify-content:center;text-align:center;padding:20px;touch-action:none;
+}
+.bar{display:flex;gap:10px;align-items:center}
+.bar label{flex:1;font-size:.8rem;color:var(--mut);display:flex;flex-direction:column;gap:4px}
+.bar input[type=range]{width:100%;accent-color:var(--acc)}
+#clic{padding:22px;font-size:1.3rem}
+#ptr{position:fixed;left:0;top:0;z-index:30;pointer-events:none;will-change:transform;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))}
+#ptr svg{display:block;margin:-3px 0 0 -4px}
+#ptr path{fill:#ff3b6b;stroke:#fff;stroke-width:1.6;stroke-linejoin:round}
+#ptr.tap path{fill:#ffb020}
+@media (prefers-reduced-motion:reduce){.tile{transition:none}}
+</style>
+</head>
+<body>
+
+<section id="home">
+  <h1>Telefono come mouse del PC</h1>
+  <p>Apri questa stessa pagina su entrambi i dispositivi e scegli il ruolo di ciascuno.</p>
+  <button id="bPc" class="main" type="button">Questo è il PC (schermo)</button>
+  <button id="bTel" type="button">Questo è il telefono (telecomando)</button>
+</section>
+
+<section id="screen" hidden>
+  <div class="codebox">
+    <div id="code">----</div>
+    <p id="sst">Mi collego…</p>
+  </div>
+  <div class="grid">
+    <div class="tile" data-t><span>Bersaglio 1</span><small>Clicca qui</small></div>
+    <div class="tile" data-t><span>Bersaglio 2</span><small>Clicca qui</small></div>
+    <div class="tile" data-t><span>Bersaglio 3</span><small>Clicca qui</small></div>
+    <div class="tile" data-t><span>Bersaglio 4</span><small>Clicca qui</small></div>
+    <div class="tile" data-t><span>Bersaglio 5</span><small>Clicca qui</small></div>
+    <div class="tile" data-t><span>Bersaglio 6</span><small>Clicca qui</small></div>
+  </div>
+  <div id="ptr" aria-hidden="true" hidden>
+    <svg width="30" height="30" viewBox="0 0 24 24"><path d="M3 2 L3 19 L7.5 14.8 L10.6 21.6 L13.2 20.4 L10.1 13.8 L16 13.8 Z"/></svg>
+  </div>
+</section>
+
+<section id="remote" hidden>
+  <h1>Telecomando</h1>
+  <p id="rst">Scrivi il codice di 4 cifre mostrato sullo schermo del PC.</p>
+  <div id="pair" style="display:flex;flex-direction:column;gap:12px">
+    <input type="text" id="codeIn" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="Codice del PC">
+    <button id="conn" class="main" type="button">Collega e attiva i sensori</button>
+  </div>
+  <div id="ctl" hidden style="flex:1;display:flex;flex-direction:column;gap:12px;min-height:0">
+    <div id="pad"><p>Tieni il telefono in verticale e inclinalo. Se i sensori non partono, trascina il dito qui come su un touchpad.</p></div>
+    <div class="bar">
+      <label>Sensibilità <input type="range" id="sens" min="0.5" max="4" step="0.1" value="1.5"></label>
+      <button id="centra" type="button">Centra</button>
+    </div>
+    <button id="clic" class="main" type="button">CLIC</button>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<script>
+/* ====== CONFIGURAZIONE: incolla qui i due valori del tuo progetto Supabase ====== */
+var SUPABASE_URL = 'INCOLLA_QUI_IL_PROJECT_URL';
+var SUPABASE_KEY = 'INCOLLA_QUI_LA_PUBLISHABLE_KEY';
+/* ================================================================================ */
+
+(function(){
+  var $ = function(s){ return document.querySelector(s); };
+  var clamp = function(v, a, b){ return Math.max(a, Math.min(b, v)); };
+  var norm = function(a){ return ((a + 540) % 360) - 180; };
+  var sb = null, ch = null, ready = false;
+
+  function show(id){
+    ['home','screen','remote'].forEach(function(s){ $('#' + s).hidden = (s !== id); });
+  }
+  function connect(code, handlers, onStatus){
+    if (!window.supabase || !window.supabase.createClient) throw new Error('libreria Supabase non caricata, controlla la connessione.');
+    if (SUPABASE_URL.indexOf('INCOLLA') === 0 || SUPABASE_KEY.indexOf('INCOLLA') === 0)
+      throw new Error('mancano URL e chiave Supabase nelle prime righe del file.');
+    sb = sb || window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 30 } } });
+    var c = sb.channel('tm-' + code);
+    Object.keys(handlers).forEach(function(ev){
+      c.on('broadcast', { event: ev }, function(m){ handlers[ev](m.payload || {}); });
+    });
+    c.subscribe(function(status){ onStatus(status); });
+    return c;
+  }
+  function tx_(ev, payload){
+    if (ch && ready) ch.send({ type: 'broadcast', event: ev, payload: payload });
+  }
+  var ERR = function(e){ return 'Impossibile collegarsi: ' + (e && e.message ? e.message : e); };
+  var BAD = 'Impossibile collegarsi a Supabase: controlla URL e chiave nel file.';
+
+  /* ---------- PC: schermo con la freccia ---------- */
+  var W = innerWidth, H = innerHeight;
+  addEventListener('resize', function(){ W = innerWidth; H = innerHeight; });
+  var ptr = $('#ptr'), x = W/2, y = H/2, tx = x, ty = y, cur = null, lastC = null, lastRemote = 0;
+
+  function hover(){
+    var el = document.elementFromPoint(clamp(x, 0, W - 1), clamp(y, 0, H - 1));
+    el = el ? el.closest('[data-t]') : null;
+    if (el !== cur){
+      if (cur) cur.classList.remove('hov');
+      if (el) el.classList.add('hov');
+      cur = el;
+    }
+  }
+  function loop(){
+    x += (tx - x) * 0.3; y += (ty - y) * 0.3;
+    ptr.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
+    hover();
+    requestAnimationFrame(loop);
+  }
+  function clicSchermo(){
+    ptr.classList.add('tap');
+    setTimeout(function(){ ptr.classList.remove('tap'); }, 150);
+    if (cur){
+      var on = cur.classList.toggle('on');
+      cur.querySelector('small').textContent = on ? 'Cliccato ✓' : 'Clicca qui';
+    }
+  }
+
+  $('#bPc').addEventListener('click', function(){
+    show('screen');
+    var code = String(Math.floor(1000 + Math.random() * 9000));
+    $('#code').textContent = code;
+    var st = $('#sst');
+    try {
+      ch = connect(code, {
+        m: function(p){
+          lastRemote = Date.now();
+          if (typeof p.x === 'number' && typeof p.y === 'number'){ tx = p.x * W; ty = p.y * H; }
+          if (typeof p.c === 'number'){
+            if (lastC === null) lastC = p.c;
+            else if (p.c !== lastC){ lastC = p.c; clicSchermo(); }
+          }
+        }
+      }, function(s){
+        if (s === 'SUBSCRIBED'){
+          ready = true; ptr.hidden = false; loop();
+          st.textContent = 'Scrivi questo codice sul telefono.';
+          setInterval(function(){
+            tx_('h', {});
+            st.textContent = (Date.now() - lastRemote < 4000) ? 'Telefono collegato ✓' : 'Scrivi questo codice sul telefono.';
+          }, 1000);
+        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT'){ st.textContent = BAD; }
+      });
+    } catch(e){ st.textContent = ERR(e); }
+  });
+
+  /* ---------- Telefono: telecomando ---------- */
+  var px = .5, py = .5, cnt = 0, live = false, sens = 1.5, dirty = false, lastHello = 0;
+  var b0 = null, g0 = null, lb = 0, lg = 0;
+
+  function invia(){ dirty = true; }
+  function manda(){ tx_('m', { x: +px.toFixed(3), y: +py.toFixed(3), c: cnt }); }
+  function calibra(){ b0 = lb; g0 = lg; px = .5; py = .5; invia(); }
+
+  function onOri(e){
+    if (e.beta == null || e.gamma == null) return;
+    lb = e.beta; lg = e.gamma;
+    if (!live){ live = true; calibra(); $('#pad p').textContent = 'Sensori attivi: inclina il telefono per muovere la freccia sul PC.'; }
+    var range = 40 / sens;
+    px = clamp(.5 + (lg - g0) / (2 * range), 0, 1);
+    py = clamp(.5 + norm(lb - b0) / (2 * range * 1.2), 0, 1);
+    invia();
+  }
+
+  $('#bTel').addEventListener('click', function(){ show('remote'); });
+  $('#sens').addEventListener('input', function(e){ sens = +e.target.value; });
+  $('#centra').addEventListener('click', function(){ setTimeout(calibra, 300); });
+  $('#clic').addEventListener('pointerdown', function(e){
+    e.preventDefault();
+    cnt++; manda();
+    if (navigator.vibrate) navigator.vibrate(20);
+  });
+
+  // Touchpad di riserva se i sensori non sono disponibili
+  var lx = 0, ly = 0, drag = false, pad = $('#pad');
+  pad.addEventListener('pointerdown', function(e){ drag = true; lx = e.clientX; ly = e.clientY; });
+  addEventListener('pointerup', function(){ drag = false; });
+  pad.addEventListener('pointermove', function(e){
+    if (!drag || live) return;
+    px = clamp(px + (e.clientX - lx) / pad.clientWidth * sens, 0, 1);
+    py = clamp(py + (e.clientY - ly) / pad.clientHeight * sens, 0, 1);
+    lx = e.clientX; ly = e.clientY;
+    invia();
+  });
+
+  $('#conn').addEventListener('click', async function(){
+    var code = $('#codeIn').value.trim(), st = $('#rst');
+    if (!/^\d{4}$/.test(code)){ st.textContent = 'Il codice ha 4 cifre: guarda lo schermo del PC.'; return; }
+    try{
+      var D = window.DeviceOrientationEvent;
+      if (D && typeof D.requestPermission === 'function'){
+        var r = await D.requestPermission();
+        if (r !== 'granted') st.textContent = 'Permesso sensori negato: userai il touchpad.';
+      }
+    }catch(err){ /* si prosegue con il touchpad */ }
+    addEventListener('deviceorientation', onOri);
+    try {
+      ch = connect(code, { h: function(){ lastHello = Date.now(); } }, function(s){
+        if (s === 'SUBSCRIBED'){
+          ready = true; manda();
+          setInterval(function(){ if (dirty){ manda(); dirty = false; } }, 40);
+          setInterval(function(){
+            manda();
+            st.textContent = (Date.now() - lastHello < 3500) ? 'Collegato al PC ✓' : 'Cerco il PC con il codice ' + code + '…';
+          }, 1000);
+        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT'){ st.textContent = BAD; }
+      });
+    } catch(e){ st.textContent = ERR(e); return; }
+    st.textContent = 'Cerco il PC con il codice ' + code + '…';
+    $('#pair').hidden = true; $('#ctl').hidden = false;
+    setTimeout(function(){
+      if (!live) pad.querySelector('p').textContent = 'Nessun sensore rilevato: trascina il dito qui come su un touchpad.';
+    }, 2500);
+  });
+})();
+</script>
+</body>
+</html>
