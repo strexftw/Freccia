@@ -138,19 +138,37 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
     if (!window.supabase || !window.supabase.createClient) throw new Error('libreria Supabase non caricata, controlla la connessione.');
     if (SUPABASE_URL.indexOf('INCOLLA') === 0 || SUPABASE_KEY.indexOf('INCOLLA') === 0)
       throw new Error('mancano URL e chiave Supabase nelle prime righe del file.');
-    sb = sb || window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 30 } } });
+    sb = sb || window.supabase.createClient(SUPABASE_URL.trim().replace(/\/+$/, ''), SUPABASE_KEY.trim(), { realtime: { params: { eventsPerSecond: 30 } } });
     var c = sb.channel('tm-' + code);
     Object.keys(handlers).forEach(function(ev){
       c.on('broadcast', { event: ev }, function(m){ handlers[ev](m.payload || {}); });
     });
-    c.subscribe(function(status){ onStatus(status); });
+    c.subscribe(function(status, err){ onStatus(status, err); });
     return c;
   }
   function tx_(ev, payload){
     if (ch && ready) ch.send({ type: 'broadcast', event: ev, payload: payload });
   }
   var ERR = function(e){ return 'Impossibile collegarsi: ' + (e && e.message ? e.message : e); };
-  var BAD = 'Impossibile collegarsi a Supabase: controlla URL e chiave nel file.';
+  async function diag(){
+    var u = SUPABASE_URL.trim().replace(/\/+$/, ''), k = SUPABASE_KEY.trim();
+    if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(u))
+      return 'L’URL non sembra giusto: deve essere come https://abcdefgh.supabase.co, senza altro dopo.';
+    if (/^sb_secret_/.test(k) || /service_role/.test(k))
+      return 'Hai incollato una chiave segreta: serve la publishable key, che inizia con sb_publishable_.';
+    try{
+      var r = await fetch(u + '/auth/v1/health', { headers: { apikey: k } });
+      if (r.status === 401 || r.status === 403)
+        return 'Supabase risponde ma sembra rifiutare la chiave (errore ' + r.status + '): ricopiala per intero, senza spazi.';
+      return 'Supabase è raggiungibile (risposta ' + r.status + ') ma il canale in tempo reale non si apre. Controlla che il progetto sia attivo e non in pausa o in preparazione, poi riprova tra un minuto. Con VPN o reti che bloccano i WebSocket può fallire.';
+    }catch(e){
+      return 'Supabase non è raggiungibile da questo dispositivo (' + (e && e.message ? e.message : e) + '): controlla l’URL, la connessione, VPN o blocco pubblicità.';
+    }
+  }
+  async function fail(st, s, err){
+    st.textContent = 'Collegamento non riuscito (' + s + (err && err.message ? ': ' + err.message : '') + '). Controllo…';
+    st.textContent = 'Collegamento non riuscito (' + s + '). ' + await diag();
+  }
 
   /* ---------- PC: schermo con la freccia ---------- */
   var W = innerWidth, H = innerHeight;
@@ -196,7 +214,7 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
             else if (p.c !== lastC){ lastC = p.c; clicSchermo(); }
           }
         }
-      }, function(s){
+      }, function(s, err){
         if (s === 'SUBSCRIBED'){
           ready = true; ptr.hidden = false; loop();
           st.textContent = 'Scrivi questo codice sul telefono.';
@@ -204,9 +222,10 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
             tx_('h', {});
             st.textContent = (Date.now() - lastRemote < 4000) ? 'Telefono collegato ✓' : 'Scrivi questo codice sul telefono.';
           }, 1000);
-        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT'){ st.textContent = BAD; }
+        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ fail(st, s, err); }
       });
-    } catch(e){ st.textContent = ERR(e); }
+    } catch(e){ st.textContent = ERR(e); return; }
+    setTimeout(function(){ if (!ready) fail(st, 'nessuna risposta dopo 10 secondi'); }, 10000);
   });
 
   /* ---------- Telefono: telecomando ---------- */
@@ -260,7 +279,7 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
     }catch(err){ /* si prosegue con il touchpad */ }
     addEventListener('deviceorientation', onOri);
     try {
-      ch = connect(code, { h: function(){ lastHello = Date.now(); } }, function(s){
+      ch = connect(code, { h: function(){ lastHello = Date.now(); } }, function(s, err){
         if (s === 'SUBSCRIBED'){
           ready = true; manda();
           setInterval(function(){ if (dirty){ manda(); dirty = false; } }, 40);
@@ -268,11 +287,12 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
             manda();
             st.textContent = (Date.now() - lastHello < 3500) ? 'Collegato al PC ✓' : 'Cerco il PC con il codice ' + code + '…';
           }, 1000);
-        } else if (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT'){ st.textContent = BAD; }
+        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ fail(st, s, err); }
       });
     } catch(e){ st.textContent = ERR(e); return; }
     st.textContent = 'Cerco il PC con il codice ' + code + '…';
     $('#pair').hidden = true; $('#ctl').hidden = false;
+    setTimeout(function(){ if (!ready) fail(st, 'nessuna risposta dopo 10 secondi'); }, 10000);
     setTimeout(function(){
       if (!live) pad.querySelector('p').textContent = 'Nessun sensore rilevato: trascina il dito qui come su un touchpad.';
     }, 2500);
