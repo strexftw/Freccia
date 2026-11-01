@@ -38,7 +38,7 @@ h1{margin:0;font-size:1.3rem;letter-spacing:-.01em}
 p{margin:0;color:var(--mut);line-height:1.45}
 button{
   font:inherit;font-weight:600;border-radius:12px;border:2px solid var(--line);
-  background:var(--card);color:var(--fg);padding:14px 18px;
+  background:var(--card);color:var(--fg);padding:14px 18px;cursor:pointer;
 }
 button.main{background:var(--acc);border-color:var(--acc);color:var(--accfg);font-size:1.05rem}
 button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
@@ -118,7 +118,7 @@ input[type=text]{
   </div>
 </section>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ====== CONFIGURAZIONE: incolla qui i due valori del tuo progetto Supabase ====== */
 var SUPABASE_URL = 'https://gxktvtkxjfsbusqahgal.supabase.co';
@@ -134,40 +134,97 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
   function show(id){
     ['home','screen','remote'].forEach(function(s){ $('#' + s).hidden = (s !== id); });
   }
+  
   function connect(code, handlers, onStatus){
-    if (!window.supabase || !window.supabase.createClient) throw new Error('libreria Supabase non caricata, controlla la connessione.');
-    if (SUPABASE_URL.indexOf('INCOLLA') === 0 || SUPABASE_KEY.indexOf('INCOLLA') === 0)
-      throw new Error('mancano URL e chiave Supabase nelle prime righe del file.');
-    sb = sb || window.supabase.createClient(SUPABASE_URL.trim().replace(/\/+$/, ''), SUPABASE_KEY.trim(), { realtime: { params: { eventsPerSecond: 30 } } });
-    var c = sb.channel('tm-' + code);
-    Object.keys(handlers).forEach(function(ev){
-      c.on('broadcast', { event: ev }, function(m){ handlers[ev](m.payload || {}); });
+    if (!window.supabase || !window.supabase.createClient) {
+      console.error('Supabase non caricato');
+      throw new Error('Libreria Supabase non caricata. Controlla la connessione internet.');
+    }
+    
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      throw new Error('Mancano URL e chiave Supabase nel codice.');
+    }
+
+    // Crea client con configurazione ottimizzata per Realtime
+    if (!sb) {
+      sb = window.supabase.createClient(SUPABASE_URL.trim(), SUPABASE_KEY.trim(), {
+        realtime: {
+          params: { 
+            eventsPerSecond: 10
+          },
+          timeout: 30000
+        },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false
+        }
+      });
+      console.log('Client Supabase creato per:', SUPABASE_URL);
+    }
+    
+    var channelName = 'tm-' + code;
+    console.log('Connessione al canale:', channelName);
+    
+    var c = sb.channel(channelName, {
+      config: {
+        broadcast: { self: false },
+        presence: { key: '' }
+      }
     });
-    c.subscribe(function(status, err){ onStatus(status, err); });
+    
+    // Registra tutti gli handler
+    Object.keys(handlers).forEach(function(ev){
+      c.on('broadcast', { event: ev }, function(m){ 
+        console.log('Ricevuto evento:', ev, m.payload);
+        if (handlers[ev]) handlers[ev](m.payload || {}); 
+      });
+    });
+    
+    // Sottoscrivi al canale
+    c.subscribe(function(status, err){
+      console.log('Stato canale ' + channelName + ':', status, err);
+      if (onStatus) onStatus(status, err);
+    });
+    
     return c;
   }
+  
   function tx_(ev, payload){
-    if (ch && ready) ch.send({ type: 'broadcast', event: ev, payload: payload });
-  }
-  var ERR = function(e){ return 'Impossibile collegarsi: ' + (e && e.message ? e.message : e); };
-  async function diag(){
-    var u = SUPABASE_URL.trim().replace(/\/+$/, ''), k = SUPABASE_KEY.trim();
-    if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(u))
-      return 'L’URL non sembra giusto: deve essere come https://abcdefgh.supabase.co, senza altro dopo.';
-    if (/^sb_secret_/.test(k) || /service_role/.test(k))
-      return 'Hai incollato una chiave segreta: serve la publishable key, che inizia con sb_publishable_.';
-    try{
-      var r = await fetch(u + '/auth/v1/health', { headers: { apikey: k } });
-      if (r.status === 401 || r.status === 403)
-        return 'Supabase risponde ma sembra rifiutare la chiave (errore ' + r.status + '): ricopiala per intero, senza spazi.';
-      return 'Supabase è raggiungibile (risposta ' + r.status + ') ma il canale in tempo reale non si apre. Controlla che il progetto sia attivo e non in pausa o in preparazione, poi riprova tra un minuto. Con VPN o reti che bloccano i WebSocket può fallire.';
-    }catch(e){
-      return 'Supabase non è raggiungibile da questo dispositivo (' + (e && e.message ? e.message : e) + '): controlla l’URL, la connessione, VPN o blocco pubblicità.';
+    if (ch && ready) {
+      console.log('Invio evento:', ev, payload);
+      ch.send({ type: 'broadcast', event: ev, payload: payload });
     }
   }
+  
+  var ERR = function(e){ 
+    return 'Impossibile collegarsi: ' + (e && e.message ? e.message : e); 
+  };
+  
+  async function diag(){
+    var u = SUPABASE_URL.trim(), k = SUPABASE_KEY.trim();
+    if (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(u))
+      return 'L\'URL non sembra corretto. Deve essere come https://abcdefgh.supabase.co';
+    
+    try{
+      var r = await fetch(u + '/rest/v1/', { 
+        headers: { 
+          apikey: k,
+          Authorization: 'Bearer ' + k
+        } 
+      });
+      if (r.status === 401 || r.status === 403)
+        return 'Chiave Supabase rifiutata (errore ' + r.status + '). Verifica che sia la chiave anon (pubblica).';
+      return 'Supabase raggiungibile (risposta ' + r.status + '). Se non funziona, controlla che il progetto non sia in pausa nel dashboard.';
+    }catch(e){
+      return 'Supabase non raggiungibile: ' + (e && e.message ? e.message : 'errore di rete');
+    }
+  }
+  
   async function fail(st, s, err){
-    st.textContent = 'Collegamento non riuscito (' + s + (err && err.message ? ': ' + err.message : '') + '). Controllo…';
-    st.textContent = 'Collegamento non riuscito (' + s + '). ' + await diag();
+    console.error('Errore connessione:', s, err);
+    st.textContent = 'Connessione fallita (' + s + '). Diagnosi in corso...';
+    var msg = await diag();
+    st.textContent = 'Connessione fallita. ' + msg;
   }
 
   /* ---------- PC: schermo con la freccia ---------- */
@@ -184,12 +241,15 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       cur = el;
     }
   }
+  
   function loop(){
-    x += (tx - x) * 0.3; y += (ty - y) * 0.3;
+    x += (tx - x) * 0.3; 
+    y += (ty - y) * 0.3;
     ptr.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
     hover();
     requestAnimationFrame(loop);
   }
+  
   function clicSchermo(){
     ptr.classList.add('tap');
     setTimeout(function(){ ptr.classList.remove('tap'); }, 150);
@@ -204,28 +264,48 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
     var code = String(Math.floor(1000 + Math.random() * 9000));
     $('#code').textContent = code;
     var st = $('#sst');
+    st.textContent = 'In attesa di connessione...';
+    
     try {
       ch = connect(code, {
         m: function(p){
           lastRemote = Date.now();
-          if (typeof p.x === 'number' && typeof p.y === 'number'){ tx = p.x * W; ty = p.y * H; }
+          if (typeof p.x === 'number' && typeof p.y === 'number'){ 
+            tx = p.x * W; 
+            ty = p.y * H; 
+          }
           if (typeof p.c === 'number'){
             if (lastC === null) lastC = p.c;
-            else if (p.c !== lastC){ lastC = p.c; clicSchermo(); }
+            else if (p.c !== lastC){ 
+              lastC = p.c; 
+              clicSchermo(); 
+            }
           }
         }
       }, function(s, err){
         if (s === 'SUBSCRIBED'){
-          ready = true; ptr.hidden = false; loop();
-          st.textContent = 'Scrivi questo codice sul telefono.';
+          ready = true; 
+          ptr.hidden = false; 
+          loop();
+          st.textContent = '✓ Pronto! Scrivi il codice ' + code + ' sul telefono.';
           setInterval(function(){
             tx_('h', {});
-            st.textContent = (Date.now() - lastRemote < 4000) ? 'Telefono collegato ✓' : 'Scrivi questo codice sul telefono.';
+            var connected = (Date.now() - lastRemote < 4000);
+            st.textContent = connected ? '✓ Telefono collegato' : '✓ Pronto! Scrivi il codice ' + code + ' sul telefono.';
           }, 1000);
-        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ fail(st, s, err); }
+        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ 
+          fail(st, s, err); 
+        }
       });
-    } catch(e){ st.textContent = ERR(e); return; }
-    setTimeout(function(){ if (!ready) fail(st, 'nessuna risposta dopo 10 secondi'); }, 10000);
+    } catch(e){ 
+      st.textContent = ERR(e); 
+      console.error(e);
+      return; 
+    }
+    
+    setTimeout(function(){ 
+      if (!ready) fail(st, 'timeout', null); 
+    }, 15000);
   });
 
   /* ---------- Telefono: telecomando ---------- */
@@ -233,13 +313,29 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
   var b0 = null, g0 = null, lb = 0, lg = 0;
 
   function invia(){ dirty = true; }
-  function manda(){ tx_('m', { x: +px.toFixed(3), y: +py.toFixed(3), c: cnt }); }
-  function calibra(){ b0 = lb; g0 = lg; px = .5; py = .5; invia(); }
+  
+  function manda(){ 
+    tx_('m', { x: +px.toFixed(3), y: +py.toFixed(3), c: cnt }); 
+  }
+  
+  function calibra(){ 
+    b0 = lb; 
+    g0 = lg; 
+    px = .5; 
+    py = .5; 
+    invia(); 
+    console.log('Calibrato: b0=' + b0 + ', g0=' + g0);
+  }
 
   function onOri(e){
     if (e.beta == null || e.gamma == null) return;
-    lb = e.beta; lg = e.gamma;
-    if (!live){ live = true; calibra(); $('#pad p').textContent = 'Sensori attivi: inclina il telefono per muovere la freccia sul PC.'; }
+    lb = e.beta; 
+    lg = e.gamma;
+    if (!live){ 
+      live = true; 
+      calibra(); 
+      $('#pad p').textContent = '✓ Sensori attivi: inclina il telefono.'; 
+    }
     var range = 40 / sens;
     px = clamp(.5 + (lg - g0) / (2 * range), 0, 1);
     py = clamp(.5 + norm(lb - b0) / (2 * range * 1.2), 0, 1);
@@ -249,52 +345,99 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
   $('#bTel').addEventListener('click', function(){ show('remote'); });
   $('#sens').addEventListener('input', function(e){ sens = +e.target.value; });
   $('#centra').addEventListener('click', function(){ setTimeout(calibra, 300); });
+  
   $('#clic').addEventListener('pointerdown', function(e){
     e.preventDefault();
-    cnt++; manda();
+    cnt++; 
+    manda();
     if (navigator.vibrate) navigator.vibrate(20);
   });
 
-  // Touchpad di riserva se i sensori non sono disponibili
+  // Touchpad di riserva
   var lx = 0, ly = 0, drag = false, pad = $('#pad');
-  pad.addEventListener('pointerdown', function(e){ drag = true; lx = e.clientX; ly = e.clientY; });
+  pad.addEventListener('pointerdown', function(e){ 
+    drag = true; 
+    lx = e.clientX; 
+    ly = e.clientY; 
+  });
   addEventListener('pointerup', function(){ drag = false; });
+  
   pad.addEventListener('pointermove', function(e){
     if (!drag || live) return;
     px = clamp(px + (e.clientX - lx) / pad.clientWidth * sens, 0, 1);
     py = clamp(py + (e.clientY - ly) / pad.clientHeight * sens, 0, 1);
-    lx = e.clientX; ly = e.clientY;
+    lx = e.clientX; 
+    ly = e.clientY;
     invia();
   });
 
   $('#conn').addEventListener('click', async function(){
     var code = $('#codeIn').value.trim(), st = $('#rst');
-    if (!/^\d{4}$/.test(code)){ st.textContent = 'Il codice ha 4 cifre: guarda lo schermo del PC.'; return; }
+    if (!/^\d{4}$/.test(code)){ 
+      st.textContent = 'Inserisci un codice di 4 cifre.'; 
+      return; 
+    }
+    
     try{
       var D = window.DeviceOrientationEvent;
       if (D && typeof D.requestPermission === 'function'){
         var r = await D.requestPermission();
-        if (r !== 'granted') st.textContent = 'Permesso sensori negato: userai il touchpad.';
+        if (r !== 'granted') {
+          st.textContent = 'Permesso sensori negato. Userai il touchpad.';
+        } else {
+          console.log('Permesso sensori concesso');
+        }
       }
-    }catch(err){ /* si prosegue con il touchpad */ }
+    }catch(err){ 
+      console.log('Errore permesso sensori:', err);
+    }
+    
     addEventListener('deviceorientation', onOri);
+    
+    st.textContent = 'Connessione al PC...';
+    
     try {
-      ch = connect(code, { h: function(){ lastHello = Date.now(); } }, function(s, err){
+      ch = connect(code, { 
+        h: function(){ 
+          lastHello = Date.now(); 
+        } 
+      }, function(s, err){
         if (s === 'SUBSCRIBED'){
-          ready = true; manda();
-          setInterval(function(){ if (dirty){ manda(); dirty = false; } }, 40);
+          ready = true; 
+          manda();
+          setInterval(function(){ 
+            if (dirty){ 
+              manda(); 
+              dirty = false; 
+            } 
+          }, 40);
           setInterval(function(){
             manda();
-            st.textContent = (Date.now() - lastHello < 3500) ? 'Collegato al PC ✓' : 'Cerco il PC con il codice ' + code + '…';
+            var connected = (Date.now() - lastHello < 3500);
+            st.textContent = connected ? '✓ Collegato al PC' : 'Cerco il PC...';
           }, 1000);
-        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ fail(st, s, err); }
+        } else if (!ready && (s === 'CHANNEL_ERROR' || s === 'TIMED_OUT' || s === 'CLOSED')){ 
+          fail(st, s, err); 
+        }
       });
-    } catch(e){ st.textContent = ERR(e); return; }
-    st.textContent = 'Cerco il PC con il codice ' + code + '…';
-    $('#pair').hidden = true; $('#ctl').hidden = false;
-    setTimeout(function(){ if (!ready) fail(st, 'nessuna risposta dopo 10 secondi'); }, 10000);
+    } catch(e){ 
+      st.textContent = ERR(e); 
+      console.error(e);
+      return; 
+    }
+    
+    st.textContent = 'Cerco il PC con codice ' + code + '...';
+    $('#pair').hidden = true; 
+    $('#ctl').hidden = false;
+    
+    setTimeout(function(){ 
+      if (!ready) fail(st, 'timeout', null); 
+    }, 15000);
+    
     setTimeout(function(){
-      if (!live) pad.querySelector('p').textContent = 'Nessun sensore rilevato: trascina il dito qui come su un touchpad.';
+      if (!live) {
+        pad.querySelector('p').textContent = 'Nessun sensore. Trascina il dito qui.';
+      }
     }, 2500);
   });
 })();
