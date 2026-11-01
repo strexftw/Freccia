@@ -111,7 +111,7 @@ input[type=text]{
   <div id="ctl" hidden style="flex:1;display:flex;flex-direction:column;gap:12px;min-height:0">
     <div id="pad"><p>Tieni il telefono in verticale e inclinalo. Se i sensori non partono, trascina il dito qui come su un touchpad.</p></div>
     <div class="bar">
-      <label>Sensibilità <input type="range" id="sens" min="0.5" max="4" step="0.1" value="1.5"></label>
+      <label>Sensibilità <input type="range" id="sens" min="0.3" max="3" step="0.1" value="1.0"></label>
       <button id="centra" type="button">Centra</button>
     </div>
     <button id="clic" class="main" type="button">CLIC</button>
@@ -145,7 +145,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       throw new Error('Mancano URL e chiave Supabase nel codice.');
     }
 
-    // Crea client con configurazione ottimizzata per Realtime
     if (!sb) {
       sb = window.supabase.createClient(SUPABASE_URL.trim(), SUPABASE_KEY.trim(), {
         realtime: {
@@ -159,12 +158,9 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
           autoRefreshToken: false
         }
       });
-      console.log('Client Supabase creato per:', SUPABASE_URL);
     }
     
     var channelName = 'tm-' + code;
-    console.log('Connessione al canale:', channelName);
-    
     var c = sb.channel(channelName, {
       config: {
         broadcast: { self: false },
@@ -172,17 +168,13 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       }
     });
     
-    // Registra tutti gli handler
     Object.keys(handlers).forEach(function(ev){
       c.on('broadcast', { event: ev }, function(m){ 
-        console.log('Ricevuto evento:', ev, m.payload);
         if (handlers[ev]) handlers[ev](m.payload || {}); 
       });
     });
     
-    // Sottoscrivi al canale
     c.subscribe(function(status, err){
-      console.log('Stato canale ' + channelName + ':', status, err);
       if (onStatus) onStatus(status, err);
     });
     
@@ -191,7 +183,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
   
   function tx_(ev, payload){
     if (ch && ready) {
-      console.log('Invio evento:', ev, payload);
       ch.send({ type: 'broadcast', event: ev, payload: payload });
     }
   }
@@ -221,7 +212,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
   }
   
   async function fail(st, s, err){
-    console.error('Errore connessione:', s, err);
     st.textContent = 'Connessione fallita (' + s + '). Diagnosi in corso...';
     var msg = await diag();
     st.textContent = 'Connessione fallita. ' + msg;
@@ -299,7 +289,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       });
     } catch(e){ 
       st.textContent = ERR(e); 
-      console.error(e);
       return; 
     }
     
@@ -308,9 +297,17 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
     }, 15000);
   });
 
-  /* ---------- Telefono: telecomando ---------- */
-  var px = .5, py = .5, cnt = 0, live = false, sens = 1.5, dirty = false, lastHello = 0;
+  /* ---------- Telefono: telecomando con precisione migliorata ---------- */
+  var px = .5, py = .5, cnt = 0, live = false, sens = 1.0, dirty = false, lastHello = 0;
   var b0 = null, g0 = null, lb = 0, lg = 0;
+  
+  // Filtri per migliorare la precisione
+  var filteredBeta = 0, filteredGamma = 0;
+  var smoothPx = .5, smoothPy = .5;
+  var alpha = 0.15; // Fattore di smoothing (0.1-0.3 è ottimale)
+  var deadZone = 2.0; // Zona morta in gradi per evitare drift
+  var sampleCount = 0;
+  var betaSamples = [], gammaSamples = [];
 
   function invia(){ dirty = true; }
   
@@ -318,33 +315,83 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
     tx_('m', { x: +px.toFixed(3), y: +py.toFixed(3), c: cnt }); 
   }
   
-  function calibra(){ 
-    b0 = lb; 
-    g0 = lg; 
-    px = .5; 
-    py = .5; 
-    invia(); 
-    console.log('Calibrato: b0=' + b0 + ', g0=' + g0);
+  function calibra(){
+    // Calibrazione migliorata con media di più campioni
+    if (betaSamples.length > 0 && gammaSamples.length > 0) {
+      b0 = betaSamples.reduce(function(a, b){ return a + b; }, 0) / betaSamples.length;
+      g0 = gammaSamples.reduce(function(a, b){ return a + b; }, 0) / gammaSamples.length;
+    } else {
+      b0 = lb;
+      g0 = lg;
+    }
+    px = .5;
+    py = .5;
+    smoothPx = .5;
+    smoothPy = .5;
+    betaSamples = [];
+    gammaSamples = [];
+    sampleCount = 0;
+    invia();
   }
 
   function onOri(e){
     if (e.beta == null || e.gamma == null) return;
+    
     lb = e.beta; 
     lg = e.gamma;
-    if (!live){ 
-      live = true; 
-      calibra(); 
-      $('#pad p').textContent = '✓ Sensori attivi: inclina il telefono.'; 
+    
+    // Raccolta campioni per calibrazione iniziale
+    if (!live) {
+      betaSamples.push(lb);
+      gammaSamples.push(lg);
+      sampleCount++;
+      
+      if (sampleCount >= 10) { // Dopo 10 campioni, attiva
+        live = true; 
+        calibra(); 
+        $('#pad p').textContent = '✓ Sensori attivi: inclina il telefono.';
+      }
+      return;
     }
-    var range = 40 / sens;
-    px = clamp(.5 + (lg - g0) / (2 * range), 0, 1);
-    py = clamp(.5 + norm(lb - b0) / (2 * range * 1.2), 0, 1);
+    
+    // Filtro low-pass per ridurre rumore
+    filteredBeta = filteredBeta + alpha * (lb - filteredBeta);
+    filteredGamma = filteredGamma + alpha * (lg - filteredGamma);
+    
+    // Calcola differenze rispetto al punto di calibrazione
+    var deltaBeta = norm(filteredBeta - b0);
+    var deltaGamma = norm(filteredGamma - g0);
+    
+    // Applica zona morta per evitare drift quando fermo
+    if (Math.abs(deltaBeta) < deadZone) deltaBeta = 0;
+    if (Math.abs(deltaGamma) < deadZone) deltaGamma = 0;
+    
+    // Calcola movimento con sensibilità
+    var range = 35 / sens; // Range ridotto per maggiore precisione
+    
+    // Inverti asse Y (alzo telefono = freccia su) e asse X se necessario
+    var rawPx = .5 + deltaGamma / (2 * range);
+    var rawPy = .5 - deltaBeta / (2 * range); // INVERTITO: - invece di +
+    
+    // Smoothing esponenziale per movimenti fluidi
+    smoothPx = smoothPx + 0.4 * (rawPx - smoothPx);
+    smoothPy = smoothPy + 0.4 * (rawPy - smoothPy);
+    
+    // Clamp finale
+    px = clamp(smoothPx, 0, 1);
+    py = clamp(smoothPy, 0, 1);
+    
     invia();
   }
 
   $('#bTel').addEventListener('click', function(){ show('remote'); });
   $('#sens').addEventListener('input', function(e){ sens = +e.target.value; });
-  $('#centra').addEventListener('click', function(){ setTimeout(calibra, 300); });
+  $('#centra').addEventListener('click', function(){ 
+    setTimeout(function(){
+      calibra();
+      $('#pad p').textContent = '✓ Centrato! Inclina il telefono.';
+    }, 300); 
+  });
   
   $('#clic').addEventListener('pointerdown', function(e){
     e.preventDefault();
@@ -384,8 +431,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
         var r = await D.requestPermission();
         if (r !== 'granted') {
           st.textContent = 'Permesso sensori negato. Userai il touchpad.';
-        } else {
-          console.log('Permesso sensori concesso');
         }
       }
     }catch(err){ 
@@ -410,7 +455,7 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
               manda(); 
               dirty = false; 
             } 
-          }, 40);
+          }, 50); // Inviato ogni 50ms invece di 40ms per stabilità
           setInterval(function(){
             manda();
             var connected = (Date.now() - lastHello < 3500);
@@ -422,7 +467,6 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       });
     } catch(e){ 
       st.textContent = ERR(e); 
-      console.error(e);
       return; 
     }
     
@@ -438,7 +482,7 @@ var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
       if (!live) {
         pad.querySelector('p').textContent = 'Nessun sensore. Trascina il dito qui.';
       }
-    }, 2500);
+    }, 3000); // Aumentato a 3 secondi
   });
 })();
 </script>
